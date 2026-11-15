@@ -1,0 +1,528 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Hardened Primitives
+    // -------------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'mohankrishnaadusumalli264@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    function isModerator() {
+      return isAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role in ['moderator', 'admin']
+      );
+    }
+
+    function isValidStringArray(arr, maxItems, maxItemLen) {
+      return arr is list &&
+        arr.size() <= maxItems &&
+        (arr.size() == 0 || (arr[0] is string && arr[0].size() >= 1 && arr[0].size() <= maxItemLen));
+    }
+
+    // -------------------------------------------------------------------------
+    // Entity Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidUserPublic(data) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'role', 'defaultPrivateUploads', 'autoRedactPii', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'displayName', 'role', 'defaultPrivateUploads', 'autoRedactPii', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.role in ['user', 'moderator', 'admin'] &&
+        data.defaultPrivateUploads is bool &&
+        data.autoRedactPii is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'photoUrl', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 512)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'assignedBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'role', 'assignedBy', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        data.role in ['moderator', 'admin'] &&
+        isValidId(data.assignedBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll([
+          'reportId', 'userId', 'authorId', 'title', 'category', 'description',
+          'redactedExcerpt', 'scamChannel', 'riskLevel', 'confidence',
+          'suspiciousIndicators', 'explanation', 'safetyRecommendations',
+          'moderationStatus', 'verificationStatus', 'visibility',
+          'consentGiven', 'redactedPiiCount', 'sourceType', 'shareCount',
+          'submissionHash', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'reportId', 'userId', 'authorId', 'title', 'category', 'description',
+          'redactedExcerpt', 'optionalEvidence', 'scamChannel', 'riskLevel', 'confidence',
+          'suspiciousIndicators', 'explanation', 'safetyRecommendations',
+          'moderationStatus', 'verificationStatus', 'visibility',
+          'consentGiven', 'redactedPiiCount', 'sourceType', 'shareCount',
+          'submissionHash', 'deletionRequested', 'deletionRequestedAt',
+          'moderatorNotes', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.reportId) &&
+        isValidId(data.userId) &&
+        isValidId(data.authorId) &&
+        data.userId == data.authorId &&
+        data.title is string && data.title.size() >= 3 && data.title.size() <= 160 &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 64 &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 4000 &&
+        data.redactedExcerpt is string && data.redactedExcerpt.size() >= 1 && data.redactedExcerpt.size() <= 4000 &&
+        (!('optionalEvidence' in data) || (data.optionalEvidence is string && data.optionalEvidence.size() <= 1000)) &&
+        data.scamChannel is string && data.scamChannel.size() >= 2 && data.scamChannel.size() <= 48 &&
+        data.riskLevel in ['Safe', 'Low', 'Medium', 'High', 'Critical'] &&
+        (data.confidence is int || data.confidence is float) &&
+        data.confidence >= 0 && data.confidence <= 100 &&
+        isValidStringArray(data.suspiciousIndicators, 12, 300) &&
+        data.explanation is string && data.explanation.size() >= 1 && data.explanation.size() <= 3000 &&
+        isValidStringArray(data.safetyRecommendations, 10, 300) &&
+        data.moderationStatus in ['pending', 'approved', 'rejected'] &&
+        data.verificationStatus in ['unreviewed', 'ai_suspected', 'pending_review', 'verified_scam', 'false_positive', 'dismissed'] &&
+        data.visibility in ['private', 'public'] &&
+        data.consentGiven is bool &&
+        (data.moderationStatus != 'pending' || data.visibility == 'private') &&
+        (data.moderationStatus != 'rejected' || data.visibility == 'private') &&
+        (data.visibility == 'private' || (data.moderationStatus == 'approved' && data.consentGiven == true)) &&
+        data.redactedPiiCount is int && data.redactedPiiCount >= 0 && data.redactedPiiCount <= 1000 &&
+        data.sourceType in ['text', 'screenshot', 'both'] &&
+        data.shareCount is int && data.shareCount >= 0 && data.shareCount <= 10000000 &&
+        data.submissionHash is string && data.submissionHash.size() == 64 && data.submissionHash.matches('^[a-f0-9]{64}$') &&
+        (!('deletionRequested' in data) || data.deletionRequested is bool) &&
+        (!('deletionRequestedAt' in data) || data.deletionRequestedAt is timestamp) &&
+        (!('moderatorNotes' in data) || (data.moderatorNotes is string && data.moderatorNotes.size() <= 1500)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAnalysis(data) {
+      return data.keys().hasAll([
+          'userId', 'riskLevel', 'confidence', 'category', 'suspiciousIndicators',
+          'explanation', 'safetyRecommendations', 'verificationStatus',
+          'hadImageInput', 'piiRedactedCount', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'riskLevel', 'confidence', 'category', 'suspiciousIndicators',
+          'explanation', 'safetyRecommendations', 'verificationStatus',
+          'hadImageInput', 'piiRedactedCount', 'createdAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.riskLevel in ['Safe', 'Low', 'Medium', 'High', 'Critical'] &&
+        (data.confidence is int || data.confidence is float) &&
+        data.confidence >= 0 && data.confidence <= 100 &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 64 &&
+        isValidStringArray(data.suspiciousIndicators, 12, 300) &&
+        data.explanation is string && data.explanation.size() >= 1 && data.explanation.size() <= 3000 &&
+        isValidStringArray(data.safetyRecommendations, 10, 300) &&
+        data.verificationStatus == 'ai_suspected' &&
+        data.hadImageInput is bool &&
+        data.piiRedactedCount is int && data.piiRedactedCount >= 0 && data.piiRedactedCount <= 1000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidCampaign(data) {
+      return data.keys().hasAll([
+          'title', 'category', 'severity', 'summary', 'indicators',
+          'activeRegions', 'status', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'category', 'severity', 'summary', 'indicators',
+          'activeRegions', 'status', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.title is string && data.title.size() >= 3 && data.title.size() <= 160 &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 64 &&
+        data.severity in ['Medium', 'High', 'Critical'] &&
+        data.summary is string && data.summary.size() >= 10 && data.summary.size() <= 2000 &&
+        isValidStringArray(data.indicators, 12, 300) &&
+        isValidStringArray(data.activeRegions, 12, 80) &&
+        data.status in ['active', 'monitoring', 'resolved'] &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidModeration(data) {
+      return data.keys().hasAll([
+          'reportId', 'moderatorId', 'decision', 'previousStatus', 'notes', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'reportId', 'moderatorId', 'decision', 'previousStatus', 'notes', 'createdAt'
+        ]) &&
+        isValidId(data.reportId) &&
+        isValidId(data.moderatorId) &&
+        data.decision in ['approved', 'rejected', 'verified_scam', 'false_positive', 'dismissed', 'pending_review'] &&
+        data.previousStatus is string && data.previousStatus.size() >= 2 && data.previousStatus.size() <= 32 &&
+        data.notes is string && data.notes.size() >= 3 && data.notes.size() <= 1500 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'title', 'message', 'type', 'read', 'createdAt']) &&
+        data.keys().hasOnly(['userId', 'title', 'message', 'type', 'reportId', 'read', 'createdAt']) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+        data.message is string && data.message.size() >= 2 && data.message.size() <= 600 &&
+        data.type in ['verification_update', 'security_alert', 'system_notice'] &&
+        (!('reportId' in data) || isValidId(data.reportId)) &&
+        data.read is bool &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidShareEvent(data) {
+      return data.keys().hasAll(['reportId', 'userId', 'platform', 'channelType', 'createdAt']) &&
+        data.keys().hasOnly(['reportId', 'userId', 'platform', 'channelType', 'createdAt']) &&
+        isValidId(data.reportId) &&
+        isValidId(data.userId) &&
+        data.platform in [
+          'whatsapp', 'instagram', 'facebook', 'telegram', 'x',
+          'snapchat', 'reddit', 'linkedin', 'gmail', 'android_native', 'clipboard'
+        ] &&
+        data.channelType in ['web_share', 'intent_url', 'clipboard_fallback'] &&
+        data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Rules
+    // -------------------------------------------------------------------------
+
+    // 1. Users & Isolated Private PII
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(userId) &&
+        isVerifiedUser() &&
+        request.auth.uid == userId &&
+        isValidUserPublic(incoming()) &&
+        incoming().uid == request.auth.uid &&
+        incoming().role == 'user' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isVerifiedUser() &&
+        isValidUserPublic(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid == userId &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'defaultPrivateUploads', 'autoRedactPii', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+        allow list: if false;
+        allow create: if isValidId(userId) && isValidId(docId) &&
+          docId == 'profile' &&
+          isVerifiedUser() &&
+          request.auth.uid == userId &&
+          isValidUserPrivate(incoming()) &&
+          incoming().uid == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(docId) &&
+          docId == 'profile' &&
+          isVerifiedUser() &&
+          request.auth.uid == userId &&
+          isValidUserPrivate(incoming()) &&
+          incoming().uid == existing().uid &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'photoUrl', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(docId) && isVerifiedUser() && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    // 2. Trusted Admin / Moderator Role Directory
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && isSignedIn() && (request.auth.uid == adminId || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(adminId) &&
+        isAdmin() &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == adminId &&
+        incoming().assignedBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(adminId) &&
+        isAdmin() &&
+        isValidAdminRecord(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['role', 'email', 'assignedBy', 'updatedAt']);
+      allow delete: if isValidId(adminId) && isAdmin();
+    }
+
+    // 3. Scam Reports
+    match /reports/{reportId} {
+      allow get: if isValidId(reportId) && (
+        (existing().visibility == 'public' && existing().moderationStatus == 'approved') ||
+        (isSignedIn() && existing().userId == request.auth.uid) ||
+        isModerator()
+      );
+      allow list: if (
+        (resource.data.visibility == 'public' && resource.data.moderationStatus == 'approved') ||
+        (isSignedIn() && resource.data.userId == request.auth.uid) ||
+        isBootstrappedAdmin()
+      );
+      allow create: if isValidId(reportId) &&
+        isVerifiedUser() &&
+        isValidReport(incoming()) &&
+        incoming().reportId == reportId &&
+        incoming().userId == request.auth.uid &&
+        incoming().authorId == request.auth.uid &&
+        incoming().moderationStatus == 'pending' &&
+        incoming().visibility == 'private' &&
+        incoming().verificationStatus in ['unreviewed', 'ai_suspected', 'pending_review'] &&
+        (incoming().verificationStatus != 'pending_review' || incoming().consentGiven == true) &&
+        incoming().shareCount == 0 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        !('moderatorNotes' in incoming()) &&
+        !('deletionRequested' in incoming()) &&
+        !('deletionRequestedAt' in incoming());
+      allow update: if isValidId(reportId) &&
+        isVerifiedUser() &&
+        isValidReport(incoming()) &&
+        incoming().reportId == existing().reportId &&
+        incoming().userId == existing().userId &&
+        incoming().authorId == existing().authorId &&
+        incoming().submissionHash == existing().submissionHash &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Tier 1a: Administrator Moderation Override (cannot approve/reject own report)
+          (
+            isAdmin() &&
+            existing().userId != request.auth.uid &&
+            (
+              (
+                incoming().moderationStatus == 'approved' &&
+                incoming().visibility == 'public' &&
+                incoming().consentGiven == true &&
+                incoming().verificationStatus == 'verified_scam'
+              ) ||
+              (
+                incoming().moderationStatus == 'rejected' &&
+                incoming().visibility == 'private' &&
+                incoming().verificationStatus in ['dismissed', 'false_positive']
+              )
+            ) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'moderationStatus', 'visibility', 'verificationStatus', 'moderatorNotes', 'updatedAt'
+            ])
+          ) ||
+          // Tier 1b: Moderator Approval / Rejection of Pending Reports (cannot approve/reject own report)
+          (
+            isModerator() &&
+            existing().userId != request.auth.uid &&
+            existing().moderationStatus == 'pending' &&
+            (
+              (
+                incoming().moderationStatus == 'approved' &&
+                incoming().visibility == 'public' &&
+                incoming().consentGiven == true &&
+                incoming().verificationStatus == 'verified_scam'
+              ) ||
+              (
+                incoming().moderationStatus == 'rejected' &&
+                incoming().visibility == 'private' &&
+                incoming().verificationStatus in ['dismissed', 'false_positive']
+              )
+            ) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'moderationStatus', 'visibility', 'verificationStatus', 'moderatorNotes', 'updatedAt'
+            ])
+          ) ||
+          // Tier 2a: Report Author Submitting Existing Private Draft Into Pending Moderation Queue (stays private)
+          (
+            existing().userId == request.auth.uid &&
+            existing().moderationStatus == 'pending' &&
+            incoming().moderationStatus == 'pending' &&
+            incoming().visibility == 'private' &&
+            incoming().consentGiven == true &&
+            incoming().verificationStatus == 'pending_review' &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'consentGiven', 'verificationStatus', 'updatedAt'
+            ])
+          ) ||
+          // Tier 2b: Report Author Editing Pending Private Draft (remains pending and private)
+          (
+            existing().userId == request.auth.uid &&
+            existing().moderationStatus == 'pending' &&
+            incoming().moderationStatus == 'pending' &&
+            incoming().visibility == 'private' &&
+            incoming().verificationStatus == existing().verificationStatus &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'category', 'description', 'redactedExcerpt', 'optionalEvidence',
+              'suspiciousIndicators', 'safetyRecommendations', 'consentGiven', 'updatedAt'
+            ])
+          ) ||
+          // Tier 2c: Report Author Requesting Deletion or Withdrawing Public Report to Private
+          (
+            existing().userId == request.auth.uid &&
+            incoming().moderationStatus == existing().moderationStatus &&
+            incoming().visibility == 'private' &&
+            (!('deletionRequestedAt' in incoming()) || incoming().deletionRequestedAt == request.time) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'visibility', 'consentGiven', 'deletionRequested', 'deletionRequestedAt', 'updatedAt'
+            ])
+          ) ||
+          // Tier 3: Incrementing Public Share Counter (+1 only on approved public reports)
+          (
+            existing().visibility == 'public' &&
+            existing().moderationStatus == 'approved' &&
+            incoming().shareCount == existing().shareCount + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['shareCount', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(reportId) &&
+        isVerifiedUser() &&
+        (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // 4. Private AI Analysis Logs
+    match /analysis/{analysisId} {
+      allow get: if isValidId(analysisId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(analysisId) &&
+        isVerifiedUser() &&
+        isValidAnalysis(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(analysisId) && isVerifiedUser() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // 5. Threat Intelligence Campaigns
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId) && (existing().status in ['active', 'monitoring', 'resolved'] || isModerator());
+      allow list: if resource.data.status in ['active', 'monitoring', 'resolved'] || isBootstrappedAdmin();
+      allow create: if isValidId(campaignId) &&
+        isModerator() &&
+        isValidCampaign(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(campaignId) &&
+        isModerator() &&
+        isValidCampaign(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'category', 'severity', 'summary', 'indicators', 'activeRegions', 'status', 'updatedAt'
+        ]);
+      allow delete: if isValidId(campaignId) && isAdmin();
+    }
+
+    // 6. Moderation Audit Trail
+    match /moderation/{moderationId} {
+      allow get: if isValidId(moderationId) && isModerator();
+      allow list: if isSignedIn() && (resource.data.moderatorId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(moderationId) &&
+        isModerator() &&
+        isValidModeration(incoming()) &&
+        incoming().moderatorId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/reports/$(incoming().reportId)) &&
+        get(/databases/$(database)/documents/reports/$(incoming().reportId)).data.userId != request.auth.uid;
+      allow update: if false;
+      allow delete: if isValidId(moderationId) && isAdmin();
+    }
+
+    // 7. User Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isValidId(notificationId) &&
+        isVerifiedUser() &&
+        isValidNotification(incoming()) &&
+        (incoming().userId == request.auth.uid || isModerator()) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(notificationId) &&
+        isVerifiedUser() &&
+        isValidNotification(incoming()) &&
+        existing().userId == request.auth.uid &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isValidId(notificationId) && isVerifiedUser() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // 8. Universal Share Events
+    match /share_events/{shareEventId} {
+      allow get: if isValidId(shareEventId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(shareEventId) &&
+        isVerifiedUser() &&
+        isValidShareEvent(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/reports/$(incoming().reportId));
+      allow update: if false;
+      allow delete: if isValidId(shareEventId) && isVerifiedUser() && (existing().userId == request.auth.uid || isAdmin());
+    }
+  }
+}

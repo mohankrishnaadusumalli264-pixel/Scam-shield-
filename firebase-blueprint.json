@@ -1,0 +1,524 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Public-safe user profile and immutable role pointer stored at /users/{userId}. Role defaults to user and cannot be self-elevated.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "User display name"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "moderator", "admin"],
+          "description": "Display role mirrored from trusted admin records; users can only initialize as user"
+        },
+        "defaultPrivateUploads": {
+          "type": "boolean",
+          "description": "Privacy preference keeping uploaded evidence private by default"
+        },
+        "autoRedactPii": {
+          "type": "boolean",
+          "description": "Whether PII redaction runs prior to persistence"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp"
+        }
+      },
+      "required": ["uid", "displayName", "role", "defaultPrivateUploads", "autoRedactPii", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII document stored at /users/{userId}/private/profile, accessible only by owner or admin.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "AdminRoleRecord": {
+      "title": "AdminRoleRecord",
+      "description": "Trusted RBAC document at /admins/{adminId} granting moderator or admin permissions.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "role": {
+          "type": "string",
+          "enum": ["moderator", "admin"]
+        },
+        "assignedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "role", "assignedBy", "createdAt", "updatedAt"]
+    },
+    "ScamReport": {
+      "title": "ScamReport",
+      "description": "Redacted scam report submitted by an authenticated user. Starts as moderationStatus='pending' and visibility='private' until approved by an authorized moderator.",
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "category": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "redactedExcerpt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "optionalEvidence": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "scamChannel": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 48
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": ["Safe", "Low", "Medium", "High", "Critical"]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "suspiciousIndicators": {
+          "type": "array",
+          "description": "Up to 12 suspicious indicator strings"
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 3000
+        },
+        "safetyRecommendations": {
+          "type": "array",
+          "description": "Up to 10 safety recommendation strings"
+        },
+        "moderationStatus": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["unreviewed", "ai_suspected", "pending_review", "verified_scam", "false_positive", "dismissed"]
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["private", "public"]
+        },
+        "consentGiven": {
+          "type": "boolean"
+        },
+        "redactedPiiCount": {
+          "type": "integer"
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["text", "screenshot", "both"]
+        },
+        "shareCount": {
+          "type": "integer"
+        },
+        "submissionHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "deletionRequested": {
+          "type": "boolean"
+        },
+        "deletionRequestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "moderatorNotes": {
+          "type": "string",
+          "maxLength": 1500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "reportId",
+        "userId",
+        "authorId",
+        "title",
+        "category",
+        "description",
+        "redactedExcerpt",
+        "scamChannel",
+        "riskLevel",
+        "confidence",
+        "suspiciousIndicators",
+        "explanation",
+        "safetyRecommendations",
+        "moderationStatus",
+        "verificationStatus",
+        "visibility",
+        "consentGiven",
+        "redactedPiiCount",
+        "sourceType",
+        "shareCount",
+        "submissionHash",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AnalysisRecord": {
+      "title": "AnalysisRecord",
+      "description": "Private AI scan log at /analysis/{analysisId}. Never stores raw screenshots or unredacted secrets.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "riskLevel": {
+          "type": "string",
+          "enum": ["Safe", "Low", "Medium", "High", "Critical"]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "suspiciousIndicators": {
+          "type": "array"
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 3000
+        },
+        "safetyRecommendations": {
+          "type": "array"
+        },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["ai_suspected"]
+        },
+        "hadImageInput": {
+          "type": "boolean"
+        },
+        "piiRedactedCount": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "riskLevel",
+        "confidence",
+        "category",
+        "suspiciousIndicators",
+        "explanation",
+        "safetyRecommendations",
+        "verificationStatus",
+        "hadImageInput",
+        "piiRedactedCount",
+        "createdAt"
+      ]
+    },
+    "ThreatCampaign": {
+      "title": "ThreatCampaign",
+      "description": "Threat intelligence advisory published by moderators or admins at /campaigns/{campaignId}.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "category": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["Medium", "High", "Critical"]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 2000
+        },
+        "indicators": {
+          "type": "array"
+        },
+        "activeRegions": {
+          "type": "array"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "monitoring", "resolved"]
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["title", "category", "severity", "summary", "indicators", "activeRegions", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ModerationDecision": {
+      "title": "ModerationDecision",
+      "description": "Immutable human verification audit entry at /moderation/{moderationId}.",
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "moderatorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["approved", "rejected", "verified_scam", "false_positive", "dismissed", "pending_review"]
+        },
+        "previousStatus": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 1500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["reportId", "moderatorId", "decision", "previousStatus", "notes", "createdAt"]
+    },
+    "UserNotification": {
+      "title": "UserNotification",
+      "description": "User-scoped alert stored at /notifications/{notificationId}.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "message": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 600
+        },
+        "type": {
+          "type": "string",
+          "enum": ["verification_update", "security_alert", "system_notice"]
+        },
+        "reportId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "title", "message", "type", "read", "createdAt"]
+    },
+    "ShareEvent": {
+      "title": "ShareEvent",
+      "description": "Anonymized share intent event stored at /share_events/{shareEventId}.",
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["whatsapp", "instagram", "facebook", "telegram", "x", "snapchat", "reddit", "linkedin", "gmail", "android_native", "clipboard"]
+        },
+        "channelType": {
+          "type": "string",
+          "enum": ["web_share", "intent_url", "clipboard_fallback"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["reportId", "userId", "platform", "channelType", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublicProfile" },
+      "description": "User public-safe preferences and base profile"
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated user PII (email, avatar)"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRoleRecord" },
+      "description": "Trusted RBAC moderator and administrator assignments"
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/ScamReport" },
+      "description": "Community and private scam reports with strict verification and consent controls"
+    },
+    "/analysis/{analysisId}": {
+      "schema": { "$ref": "#/entities/AnalysisRecord" },
+      "description": "Private AI scan audit records without original screenshot binaries"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/ThreatCampaign" },
+      "description": "Moderator/Admin curated threat intelligence campaigns"
+    },
+    "/moderation/{moderationId}": {
+      "schema": { "$ref": "#/entities/ModerationDecision" },
+      "description": "Independent human verification audit log"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/UserNotification" },
+      "description": "User-scoped notifications"
+    },
+    "/share_events/{shareEventId}": {
+      "schema": { "$ref": "#/entities/ShareEvent" },
+      "description": "User share intent telemetry without claiming delivery"
+    }
+  }
+}

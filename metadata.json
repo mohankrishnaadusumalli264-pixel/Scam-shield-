@@ -1,0 +1,6 @@
+{
+  "name": "SCAMSHIELD",
+  "description": "AI-powered scam detection and community warning platform. Detect Scams. Share Warnings. Protect Everyone.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
